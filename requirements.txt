@@ -1,0 +1,164 @@
+I need to create a mobile app to detect the black pepper seeds impurity using flutter. 
+
+
+Signup/ Sign In page -> Login / sign in user. OTP validation also need to implement when the user login to the app.
+When the user login to the app in the backend there must be create a sub directory for each user in the backend to save data of the user.
+After log in redirect to the Dashboard where display other projects including Check Black pepper impurity 
+Dashboard ->-> Black pepper project -> In side the black pepper project there are 2 paths as Contribution and Consultant -> There if the user selects Consultant option there the user can take the picture from camera and if the image is ok they can upload the image to the testing purposes to check the pepper seeds impurity -> After analyzing thee image by the trained YOLO v8 model it displays the percentage of black pepper seeds and other objects.. User can accept it or not. 
+
+If not then the user have to mention the reason why not accepting the result. We can give 5 common reasons so the user not worry to write them on. User can simply select one or more reasons. So the feedback must link with the photo and send them to the admins dashboard by notify the admin. If the user confirm it after seeing the result when they are going to exit from the project system needs to ask whether they are willing to give the image to the further contributions. If the user likes to give the image then the image must save automatically to the Contribution folder and user redirect to the project directory after getting a feedback about the result. Then user can select another project and continue.
+
+
+
+So after done this step next you suggested to use annotation tool, after annotating the data I need to 
+
+
+
+ultralytics==8.0.185  # YOLOv8 package
+torch                 # PyTorch for deep learning
+torchvision           # PyTorch image utilities
+opencv-python         # OpenCV for image processing
+pillow                # Image handling
+numpy                 # Numerical computations
+matplotlib            # Data visualization
+tqdm                  # Progress bars
+pandas                # Data handling
+seaborn               # Advanced visualizations
+scipy                 # Scientific computing
+pyyaml                # YAML file handling
+
+
+# For moblity
+onnxruntime           # For ONNX model inference
+tensorflow            # If using TensorFlow Lite
+tensorflow-lite       # TFLite for mobile inference
+
+
+# pip install -r requirements.txt
+```
+
+
+
+import cv2
+import numpy as np
+from skimage.feature import graycomatrix, graycoprops
+from skimage import color, img_as_ubyte
+from skimage.measure import label, regionprops
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Example usage
+image_path = "C:\\Users\\PC\\Downloads\\IMG-20250210-WA0004.jpg"
+
+# Load the image
+image = cv2.imread(image_path)
+image
+
+# Convert the image to grayscale
+gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+gray
+
+# Apply GaussianBlur to reduce noise and improve edge detection
+blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+blurred
+
+# Use Canny edge detection to find edges in the image
+edges = cv2.Canny(blurred, 50, 150)
+
+# Find contours in the edges image
+contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+# Assuming the largest contour is the seed, find the largest contour
+largest_contour = max(contours, key=cv2.contourArea)
+
+# Create a mask for the largest contour
+mask = np.zeros_like(gray)
+cv2.drawContours(mask, [largest_contour], -1, 255, thickness=cv2.FILLED)
+
+# Bitwise AND the mask with the original image to isolate the seed
+isolated_seed = cv2.bitwise_and(image, image, mask=mask)
+
+# Display the original image and the isolated seed
+cv2.imshow('Original Image', image)
+cv2.imshow('Isolated Seed', isolated_seed)
+
+# Save the isolated seed image
+cv2.imwrite('isolated_seed.jpg', isolated_seed)
+
+# Wait for a key press and close all windows
+cv2.waitKey(0)
+cv2.destroyAllWindows()
+
+def extract_features(image_path):
+    # Load the image
+    image = cv2.imread(image_path)
+    if image is None:
+        raise ValueError("Image not found or unable to load.")
+
+    # Convert to grayscale
+    gray_image = color.rgb2gray(image)
+    gray_image = img_as_ubyte(gray_image)  # Convert to 8-bit unsigned integer
+
+    # Resize the image (optional, for consistency)
+    resized_image = cv2.resize(gray_image, (256, 256))
+
+    # Noise reduction using Gaussian Blur
+    blurred_image = cv2.GaussianBlur(resized_image, (5, 5), 0)
+
+    # Contrast enhancement using CLAHE
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    enhanced_image = clahe.apply(blurred_image)
+
+    # Feature 1: Color Histogram (for grayscale intensity distribution)
+    histogram = cv2.calcHist([enhanced_image], [0], None, [256], [0, 256])
+    histogram = histogram.flatten()
+
+    # Feature 2: Texture (using Gray-Level Co-occurrence Matrix - GLCM)
+    glcm = graycomatrix(enhanced_image, distances=[1], angles=[0], levels=256, symmetric=True, normed=True)
+    contrast = graycoprops(glcm, 'contrast')[0, 0]
+    energy = graycoprops(glcm, 'energy')[0, 0]
+
+    # Feature 3: Shape and Size (using contours and region properties)
+    _, binary_image = cv2.threshold(enhanced_image, 128, 255, cv2.THRESH_BINARY)
+    contours, _ = cv2.findContours(binary_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # Find the largest contour (assumed to be the pepper seed)
+    largest_contour = max(contours, key=cv2.contourArea)
+    area = cv2.contourArea(largest_contour)  # Area of the largest contour
+    perimeter = cv2.arcLength(largest_contour, True)  # Perimeter of the largest contour
+
+    # Feature 4: Aspect Ratio (width/height of bounding box)
+    x, y, w, h = cv2.boundingRect(largest_contour)
+    aspect_ratio = float(w) / h
+
+    # Return extracted features
+    features = {
+        "histogram": histogram,
+        "contrast": contrast,
+        "energy": energy,
+        "area": area,
+        "perimeter": perimeter,
+        "aspect_ratio": aspect_ratio
+    }
+    return features
+
+
+features = extract_features(image_path)
+
+histogram = features["histogram"]
+print("Color Histogram")
+
+# Create a histogram using Seaborn
+plt.figure(figsize=(10, 6))
+sns.barplot(x=np.arange(256), y=histogram, color="blue", alpha=0.7)
+plt.title("Grayscale Intensity Histogram")
+plt.xlabel("Pixel Intensity (0-255)")
+plt.ylabel("Frequency")
+plt.show()
+
+# Print extracted features
+print("Contrast (Texture):", features["contrast"])
+print("Energy (Texture):", features["energy"])
+print("Area (Shape):", features["area"])
+print("Perimeter (Shape):", features["perimeter"])
+print("Aspect Ratio (Shape):", features["aspect_ratio"])
